@@ -67,9 +67,10 @@ def parse_dt(value: str) -> datetime | None:
     return dt
 
 
-def load_items(feeds: Iterable[str], limit: int = 30) -> list[dict[str, str]]:
+def load_items(feeds: Iterable[str], limit: int = 30) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     items: list[dict[str, str]] = []
+    failures: list[dict[str, str]] = []
     seen: set[str] = set()
 
     for feed_url in feeds:
@@ -78,14 +79,7 @@ def load_items(feeds: Iterable[str], limit: int = 30) -> list[dict[str, str]]:
             xml_bytes = fetch_xml(feed_url)
             root = ET.fromstring(xml_bytes)
         except (URLError, ET.ParseError, TimeoutError, ValueError) as exc:
-            items.append(
-                {
-                    "title": f"抓取失败：{source}",
-                    "link": feed_url,
-                    "source": source,
-                    "published": str(exc),
-                }
-            )
+            failures.append({"source": source, "error": str(exc)})
             continue
 
         channel = root.find("channel")
@@ -140,10 +134,10 @@ def load_items(feeds: Iterable[str], limit: int = 30) -> list[dict[str, str]]:
                 }
             )
 
-    return items
+    return items, failures
 
 
-def render_page(items: list[dict[str, str]]) -> str:
+def render_page(items: list[dict[str, str]], failures: list[dict[str, str]]) -> str:
     now = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
     cards = []
@@ -169,6 +163,22 @@ def render_page(items: list[dict[str, str]]) -> str:
         )
 
     cards_html = "\n".join(cards) if cards else '<p class="empty">最近 24 小时内没有抓到新内容。</p>'
+    failure_html = ""
+    if failures:
+        failure_lines = []
+        for failure in failures:
+            source = html.escape(failure["source"])
+            error = html.escape(failure["error"])
+            failure_lines.append(f"<li><strong>{source}</strong> - {error}</li>")
+        failure_html = f"""
+        <section class="failures">
+          <h2>抓取状态</h2>
+          <p>下面这些源当前无法访问。若你在本机运行，常见原因是网络权限受限；GitHub Actions 里通常更容易正常抓取。</p>
+          <ul>
+            {''.join(failure_lines)}
+          </ul>
+        </section>
+        """
 
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -350,6 +360,31 @@ def render_page(items: list[dict[str, str]]) -> str:
       color: var(--muted);
       padding: 16px 4px;
     }}
+    .failures {{
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(124, 58, 237, 0.18);
+      background: rgba(255,255,255,0.74);
+    }}
+    .failures h2 {{
+      margin: 0 0 10px;
+      font-size: 1.05rem;
+    }}
+    .failures p {{
+      margin: 0 0 10px;
+      color: var(--muted);
+      line-height: 1.6;
+    }}
+    .failures ul {{
+      margin: 0;
+      padding-left: 18px;
+      color: var(--text);
+    }}
+    .failures li {{
+      margin: 8px 0;
+      line-height: 1.5;
+    }}
     @media (max-width: 860px) {{
       .hero {{
         grid-template-columns: 1fr;
@@ -392,6 +427,7 @@ def render_page(items: list[dict[str, str]]) -> str:
     <main class="grid">
       {cards_html}
     </main>
+    {failure_html}
   </div>
 </body>
 </html>
@@ -400,9 +436,9 @@ def render_page(items: list[dict[str, str]]) -> str:
 
 def main() -> None:
     feeds = get_feeds()
-    items = load_items(feeds)
-    OUTPUT.write_text(render_page(items), encoding="utf-8")
-    print(f"Wrote {OUTPUT} with {len(items)} items from {len(feeds)} feeds.")
+    items, failures = load_items(feeds)
+    OUTPUT.write_text(render_page(items, failures), encoding="utf-8")
+    print(f"Wrote {OUTPUT} with {len(items)} items from {len(feeds)} feeds and {len(failures)} failures.")
 
 
 if __name__ == "__main__":

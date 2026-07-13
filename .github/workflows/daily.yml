@@ -20,9 +20,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
       - name: Generate page
         run: python fetch_seo_news.py
 

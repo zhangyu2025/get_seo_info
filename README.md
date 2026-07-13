@@ -25,7 +25,7 @@ python fetch_seo_news.py
 仓库里已经放了 GitHub Actions 工作流：
 
 - 每天北京时间 9:30 自动运行
-- 重新抓取 RSS
+- 直接在 GitHub Actions 里联网抓取 RSS
 - 生成新的 `index.html`
 - 如果内容有变化，就自动提交更新
 
